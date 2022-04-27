@@ -3,10 +3,10 @@ import codecs
 import os.path
 import pathlib
 
-here = pathlib.Path(__file__).parent.resolve()
+root_dir = pathlib.Path(__file__).parent.resolve()
 
 # Get the long description from the README file
-long_description = (here / "README.md").read_text(encoding="utf-8")
+long_description = (root_dir / "README.md").read_text(encoding="utf-8")
 
 
 def read(rel_path):
@@ -37,6 +37,7 @@ setup(
     install_requires=[
         'numpy>=1.21.5',
         'pandas>=1.3.5',
+        "matplotlib>=3.5.1",
         'seaborn>=0.11.2',
         'scikit-learn>=1.0.2',
         'torch>=1.11.0',
