@@ -39,6 +39,7 @@ setup(
         'pandas>=1.3.5',
         'seaborn>=0.11.2',
         'scikit-learn>=1.0.2',
-        'torch>=1.11.0+cu113',
+        'torch>=1.11.0',
+        "tensorboard>=2.8.0"
     ]
 )
