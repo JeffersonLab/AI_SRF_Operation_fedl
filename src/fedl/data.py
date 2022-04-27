@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 from torch.utils.data.dataset import Dataset
 
 # The highest a C100 can do is around 21.5 MV/m in practice and 25 MV/m (I think) per administrative limit.
-from src import utils
+from . import utils
 
 c100_max_operational_gmes = 25
 
@@ -357,7 +357,7 @@ def get_ndx_columns(linac: str, zones: Optional[List[str]] = None, suffix: str =
         elif linac == '2L':
             zones = ('22', '23', '24', '25', '26', '27')
 
-    # Group the outputs by radiation type, not location so we can do a two branch model
+    # Group the outputs by radiation type, not location, so we can do a two branch model
     for zone in zones:
         c100_ndx_cols.append(f"INX{linac}{zone}_nDsRt{suffix}")
     for zone in zones:
@@ -437,4 +437,4 @@ def evaluate_model_on_trip_data(model: nn.Module, gmes_zones: List[str], rad_zon
     device = torch.device("cpu") if not torch.has_cuda else torch.device("cuda:0")
     y_pred = utils.make_predictions(model=model, data_loader=data_loader, device=device, y_cols=gd.y_cols)
     report_performance(y_pred=y_pred, y_true=gd.y, egain=gd.df.EGAIN, dtime=gd.df.Datetime,
-                       set_name=f"Trip Data\nfilter={data_filter}")
+                       set_name=set_name)
