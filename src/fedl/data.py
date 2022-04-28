@@ -1,5 +1,5 @@
 import os
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Union
 
 import sklearn.model_selection
 import torch
@@ -145,8 +145,8 @@ class FEData:
         self.df['EGAIN'] = energy_gain
 
     def get_train_test(self, split: str = 'egain', train_size: float = 0.75, batch_size: int = 256, seed: int = 732,
-                       shuffle: bool = True) \
-            -> Tuple[DataLoader, DataLoader]:
+                       shuffle: bool = True, provide_df: bool = True) \
+            -> Union[Tuple[DataLoader, DataLoader], Tuple[DataLoader, DataLoader, pd.DataFrame, pd.DataFrame]]:
         """Get train and test splits as pytorch DataLoaders.  Subclasses will should override this as makes sense.
 
         This uses a basic randomized splitting approach.
@@ -157,21 +157,32 @@ class FEData:
             batch_size: The batch size used in the DataLoaders
             seed: The value used to seed the data splitter's random_state
             shuffle: Should the DataLoaders reshuffle every epoch
+            provide_df: Should the internal dataframe be split and returned
 
         Returns:  train_dataloader, test_dataloader
         """
 
+        df_train, df_test = None, None
         if split == 'egain':
             X_train, X_test, y_train, y_test = sklearn.model_selection.train_test_split(self.X, self.y,
                                                                                         train_size=train_size,
+                                                                                        stratify=self.df.EGAIN,
                                                                                         random_state=seed)
+            if provide_df:
+                df_train, df_test = sklearn.model_selection.train_test_split(self.df,
+                                                                             train_size=train_size,
+                                                                             stratify=self.df.EGAIN,
+                                                                             random_state=seed)
         else:
             raise RuntimeError(f"Unsupported split argument '{split}'")
 
         train_loader = DataLoader(NDX_RF_Dataset(X_train, y_train), batch_size=batch_size, shuffle=shuffle)
         test_loader = DataLoader(NDX_RF_Dataset(X_test, y_test), batch_size=batch_size, shuffle=shuffle)
 
-        return train_loader, test_loader
+        if provide_df:
+            return train_loader, test_loader, df_train, df_test
+        else:
+            return train_loader, test_loader
 
     def get_data_loader(self, batch_size: int = 256, shuffle: bool = True) -> DataLoader:
         """A method for return a DataLoader object comprised of all the data in the GradientData object.
@@ -213,8 +224,9 @@ class GradientScanData(FEData):
         super().load_data()
         self.df['settle_start'] = pd.to_datetime(self.df['settle_start'])
 
-    def get_train_test(self, split: str = 'settle', train_size: float = 0.75, batch_size: int = 256, seed: int = 732) \
-            -> Tuple[DataLoader, DataLoader]:
+    def get_train_test(self, split: str = 'settle', train_size: float = 0.75, batch_size: int = 256, seed: int = 732,
+                       shuffle: bool = True, provide_df: bool = True) \
+            -> Union[Tuple[DataLoader, DataLoader], Tuple[DataLoader, DataLoader, pd.DataFrame, pd.DataFrame]]:
         """Get train and test splits as DataLoaders.
         Args:
             split: can be 'settle' or 'gradient_sorted'.  settle splits by grouping settle samples, gradient
@@ -223,10 +235,13 @@ class GradientScanData(FEData):
                         train/val/test split and that we have already pulled off the 20 for testing.
             batch_size: The batch size used in the DataLoaders
             seed: The value used to seed the random_state used to split the train and test sets.
+            shuffle: Should the DataLoaders reshuffle every epoch
+            provide_df: Should the internal dataframe be split and returned
 
         Returns:  train_dataloader, test_dataloader
         """
 
+        df_train, df_test = None, None
         if split == 'settle':
             gss = GroupShuffleSplit(train_size=train_size, random_state=seed, n_splits=2)
             train_idx, test_idx = next(gss.split(self.df, groups=self.df.settle_start))
@@ -235,6 +250,9 @@ class GradientScanData(FEData):
             y_train = self.y.iloc[train_idx, :]
             X_test = self.X.iloc[test_idx, :]
             y_test = self.y.iloc[test_idx, :]
+
+            df_train = self.df.iloc[train_idx, :]
+            df_test = self.df.iloc[test_idx, :]
 
         elif split == 'gradient_sorted':
             # Split out train and test on sorted C100 Egain (this is proportional to the summed gradient)
@@ -245,13 +263,20 @@ class GradientScanData(FEData):
             X_test = self.X[egain_categories == 'test']
             y_test = self.y[egain_categories == 'test']
 
+            df_train = self.df[egain_categories == 'train']
+            df_test = self.df[egain_categories == 'test']
+
+
         else:
             raise RuntimeError(f"Unsupported split argument '{split}'")
 
-        train_loader = DataLoader(NDX_RF_Dataset(X_train, y_train), batch_size=batch_size, shuffle=True)
-        test_loader = DataLoader(NDX_RF_Dataset(X_test, y_test), batch_size=batch_size, shuffle=True)
+        train_loader = DataLoader(NDX_RF_Dataset(X_train, y_train), batch_size=batch_size, shuffle=shuffle)
+        test_loader = DataLoader(NDX_RF_Dataset(X_test, y_test), batch_size=batch_size, shuffle=shuffle)
 
-        return train_loader, test_loader
+        if provide_df:
+            return train_loader, test_loader, df_train, df_test
+        else:
+            return train_loader, test_loader
 
 
 class OperationsData(FEData):
