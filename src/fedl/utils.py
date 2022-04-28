@@ -54,6 +54,7 @@ def plot_predictions_over_time(df, title=""):
     g.fig.suptitle(f"Obs. and Pred. Over Time {title}")
 
     # for (row_key, col_key), ax in g.axes_dict.items():
+    # noinspection PyUnusedLocal
     for (col_key), ax in g.axes_dict.items():
         ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
         # ax.xaxis.set_major_locator(mdates.MonthLocator())
@@ -116,6 +117,7 @@ def get_sensor_plot_data(y_true: pd.DataFrame, y_pred: pd.DataFrame, dtime, egai
     return g_df, n_df, g_diag_df, n_diag_df
 
 
+# noinspection PyUnusedLocal
 def plot_diagonal(*args, **kwargs):
     """This plots a black, diagonal line from the bottom-left to top-right corners."""
     ax = plt.gca()
