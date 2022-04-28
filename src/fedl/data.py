@@ -17,10 +17,10 @@ c100_max_operational_gmes = 25
 
 # Radiation can be arbitrarily large, so these scaling values should be chosen as the highest likely to be seen under
 # "normal" circumstances.  Gamma is typically about 10x neutron.
-# max_gamma_rad_per_hour = 200
-# max_neutron_rad_per_hour = 20
-max_gamma_rad_per_hour = [5, 10, 10, 8, 1.5, 3]
-max_neutron_rad_per_hour = [0.2, 0.6, 1.0, 0.6, 0.1, 0.05]
+max_gamma_rad_per_hour = 10
+max_neutron_rad_per_hour = 1
+# max_gamma_rad_per_hour = [5, 10, 10, 8, 1.5, 3]
+# max_neutron_rad_per_hour = [0.2, 0.6, 1.0, 0.6, 0.1, 0.05]
 
 
 class FEData:
@@ -64,15 +64,29 @@ class FEData:
 
         self.X_cols = None
         self.y_cols = None
+        self.neutron_max = max_neutron_rad_per_hour
+        self.gamma_max = max_gamma_rad_per_hour
 
         # Placeholders for data to be loaded later
+        self.df_all = None
         self.df = None
         self.X = None
         self.y = None
         self.ced_df = None
-        # self.load_data()
 
-    def load_data(self):
+    def normalize_radiation(self, radiation: pd.DataFrame) -> pd.DataFrame:
+        """Transform the radiation signals to each have a unit range ([0,1])"""
+        radiation[self.neutron_cols] = radiation[self.neutron_cols] / self.neutron_max
+        radiation[self.gamma_cols] = radiation[self.gamma_cols] / self.gamma_max
+        return radiation
+
+    def unnormalize_radiation(self, radiation: pd.DataFrame) -> pd.DataFrame:
+        """Transform the radiation values back into their physical units"""
+        radiation[self.neutron_cols] = radiation[self.neutron_cols] * self.neutron_max
+        radiation[self.gamma_cols] = radiation[self.gamma_cols] * self.gamma_max
+        return radiation
+
+    def load_data(self, match_scaling: bool = False):
         """This loads the data from files and generates all downstream attributes of the FEData object.
 
         This can and should be overridden for subclasses.  This method
@@ -82,6 +96,10 @@ class FEData:
         3. Reads in the ced_file, and calculates a column, EGAIN, that is the total energy gain for all cavities.
         4. This normalizes the GMES by the c100_max_operational_gmes variable.  Typically, this equals 25.
         5
+
+        Args:
+            match_scaling: Should each individual radiation signals be divided by its max value.  Otherwise, module wide
+                           default is used.
         """
         # Reduce the data to only the parts we need to keep for the model and or processing
         self.df = pd.read_csv(f"{self.data_dir}/{self.section}/{self.filename}")
@@ -103,9 +121,14 @@ class FEData:
 
         # Normalize the GMES data to an operational range, and radiation so that gamma and neutron are of a similar unit
         # scale.
+        if match_scaling:
+            self.neutron_max = self.df[self.neutron_cols].max()
+            self.gamma_max = self.df[self.gamma_cols].max()
+
+        self.df[self.neutron_cols + self.gamma_cols] = self.normalize_radiation(
+            self.df[self.neutron_cols+self.gamma_cols])
+
         self.df[self.gmes_cols] = self.df[self.gmes_cols] / c100_max_operational_gmes
-        self.df[self.neutron_cols] = self.df[self.neutron_cols] / max_neutron_rad_per_hour
-        self.df[self.gamma_cols] = self.df[self.gamma_cols] / max_gamma_rad_per_hour
 
         # Set datetime dtypes
         self.df['Datetime'] = pd.to_datetime(self.df['Datetime'])
@@ -113,6 +136,9 @@ class FEData:
         # Set aside the X and y for inputs and labels
         self.X = self.df[self.X_cols]
         self.y = self.df[self.y_cols]
+
+        # Keep an unfiltered copy
+        self.df_all = self.df
 
     def _get_onset_data(self) -> pd.DataFrame:
         """Generate a DataFrame a cavity onset per column, repeated for 'length' rows.
@@ -144,14 +170,14 @@ class FEData:
             energy_gain += self.df[gmes_col].values * self.ced_df[self.ced_df['EPICSName'] == epics_name].length.values
         self.df['EGAIN'] = energy_gain
 
-    def get_train_test(self, split: str = 'egain', train_size: float = 0.75, batch_size: int = 256, seed: int = 732,
-                       shuffle: bool = True, provide_df: bool = True) \
+    def get_train_test(self, split: str = 'EGAIN', train_size: float = 0.75, batch_size: int = 256, seed: int = 732,
+                       shuffle: bool = True, provide_df: bool = False) \
             -> Union[Tuple[DataLoader, DataLoader], Tuple[DataLoader, DataLoader, pd.DataFrame, pd.DataFrame]]:
         """Get train and test splits as pytorch DataLoaders.  Subclasses will should override this as makes sense.
 
         This uses a basic randomized splitting approach.
         Args:
-            split: How should the data be split.  FEData only supports 'egain' which stratifies data on the EGAIN column
+            split: How should the data be split.  FEData stratifies on the supplied column name.
             train_size: train_size for GroupShuffleSplit.  0.75 by default is used assuming that we want a 60/20/20
                         train/val/test split and that we have already pulled off the 20 for testing.
             batch_size: The batch size used in the DataLoaders
@@ -163,18 +189,15 @@ class FEData:
         """
 
         df_train, df_test = None, None
-        if split == 'egain':
-            X_train, X_test, y_train, y_test = sklearn.model_selection.train_test_split(self.X, self.y,
-                                                                                        train_size=train_size,
-                                                                                        stratify=self.df.EGAIN,
-                                                                                        random_state=seed)
-            if provide_df:
-                df_train, df_test = sklearn.model_selection.train_test_split(self.df,
-                                                                             train_size=train_size,
-                                                                             stratify=self.df.EGAIN,
-                                                                             random_state=seed)
-        else:
-            raise RuntimeError(f"Unsupported split argument '{split}'")
+        X_train, X_test, y_train, y_test = sklearn.model_selection.train_test_split(self.X, self.y,
+                                                                                    train_size=train_size,
+                                                                                    stratify=self.df[split],
+                                                                                    random_state=seed)
+        if provide_df:
+            df_train, df_test = sklearn.model_selection.train_test_split(self.df,
+                                                                         train_size=train_size,
+                                                                         stratify=self.df[split],
+                                                                         random_state=seed)
 
         train_loader = DataLoader(NDX_RF_Dataset(X_train, y_train), batch_size=batch_size, shuffle=shuffle)
         test_loader = DataLoader(NDX_RF_Dataset(X_test, y_test), batch_size=batch_size, shuffle=shuffle)
@@ -200,11 +223,12 @@ class FEData:
             query: A string to pass to a DataFrame.query() call.  None implies to reset X and y back to all of df.
         """
         if query is None:
-            tmp = self.df
+            tmp = self.df_all
         else:
             tmp = self.df.query(query)
         self.X = tmp[self.X_cols]
         self.y = tmp[self.y_cols]
+        self.df = tmp
 
 
 class GradientScanData(FEData):
@@ -225,7 +249,7 @@ class GradientScanData(FEData):
         self.df['settle_start'] = pd.to_datetime(self.df['settle_start'])
 
     def get_train_test(self, split: str = 'settle', train_size: float = 0.75, batch_size: int = 256, seed: int = 732,
-                       shuffle: bool = True, provide_df: bool = True) \
+                       shuffle: bool = True, provide_df: bool = False) \
             -> Union[Tuple[DataLoader, DataLoader], Tuple[DataLoader, DataLoader, pd.DataFrame, pd.DataFrame]]:
         """Get train and test splits as DataLoaders.
         Args:
