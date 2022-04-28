@@ -144,7 +144,8 @@ class FEData:
             energy_gain += self.df[gmes_col].values * self.ced_df[self.ced_df['EPICSName'] == epics_name].length.values
         self.df['EGAIN'] = energy_gain
 
-    def get_train_test(self, split: str = 'egain', train_size: float = 0.75, batch_size: int = 256, seed: int = 732) \
+    def get_train_test(self, split: str = 'egain', train_size: float = 0.75, batch_size: int = 256, seed: int = 732,
+                       shuffle: bool = True) \
             -> Tuple[DataLoader, DataLoader]:
         """Get train and test splits as pytorch DataLoaders.  Subclasses will should override this as makes sense.
 
@@ -155,6 +156,7 @@ class FEData:
                         train/val/test split and that we have already pulled off the 20 for testing.
             batch_size: The batch size used in the DataLoaders
             seed: The value used to seed the data splitter's random_state
+            shuffle: Should the DataLoaders reshuffle every epoch
 
         Returns:  train_dataloader, test_dataloader
         """
@@ -166,8 +168,8 @@ class FEData:
         else:
             raise RuntimeError(f"Unsupported split argument '{split}'")
 
-        train_loader = DataLoader(NDX_RF_Dataset(X_train, y_train), batch_size=batch_size, shuffle=True)
-        test_loader = DataLoader(NDX_RF_Dataset(X_test, y_test), batch_size=batch_size, shuffle=True)
+        train_loader = DataLoader(NDX_RF_Dataset(X_train, y_train), batch_size=batch_size, shuffle=shuffle)
+        test_loader = DataLoader(NDX_RF_Dataset(X_test, y_test), batch_size=batch_size, shuffle=shuffle)
 
         return train_loader, test_loader
 
