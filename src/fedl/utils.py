@@ -1,6 +1,7 @@
+import numpy as np
 import torch
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
-from typing import List, Union
+from typing import List, Union, Tuple
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -13,7 +14,9 @@ pd.set_option('display.max_columns', None)
 pd.set_option('display.width', 1000)
 
 
-def score_model(y_pred, y_test, multioutput='raw_values'):
+def score_model(y_pred: pd.DataFrame, y_test: pd.DataFrame,
+                multioutput: str = 'raw_values') -> Union[Tuple[float, float, float],
+                                                          Tuple[np.ndarray, np.ndarray, np.ndarray]]:
     r2 = r2_score(y_test, y_pred, multioutput=multioutput)
     mse = mean_squared_error(y_test, y_pred, multioutput=multioutput)
     mae = mean_absolute_error(y_test, y_pred, multioutput=multioutput)
@@ -69,14 +72,16 @@ def plot_predictions_over_time(df, title=""):
 def get_sensor_plot_data(y_true: pd.DataFrame, y_pred: pd.DataFrame, dtime, egain):
     """Generates the DataFrame needed by the show_sensor_data function"""
 
+    dtime = dtime.reset_index(drop=True)
+    egain = egain.reset_index(drop=True)
+
     # Construct basic DataFrames that we will update and concatenate
     y_true = y_true.reset_index(drop=True)
     y_pred = y_pred.reset_index(drop=True)
     y_err = y_pred - y_true
     y_err_perc = 100 * (y_pred - y_true) / y_true
 
-
-# Generate the different DataFrames that will then be combined and melted
+    # Generate the different DataFrames that will then be combined and melted
     # Observed data
     y_true['type'] = ['observed'] * len(y_true)
     y_true['dtime'] = dtime
