@@ -76,15 +76,17 @@ class FEData:
 
     def normalize_radiation(self, radiation: pd.DataFrame) -> pd.DataFrame:
         """Transform the radiation signals to each have a unit range ([0,1])"""
-        radiation[self.neutron_cols] = radiation[self.neutron_cols] / self.neutron_max
-        radiation[self.gamma_cols] = radiation[self.gamma_cols] / self.gamma_max
-        return radiation
+        out = radiation.copy()
+        out[self.neutron_cols] = out[self.neutron_cols] / self.neutron_max
+        out[self.gamma_cols] = out[self.gamma_cols] / self.gamma_max
+        return out
 
     def unnormalize_radiation(self, radiation: pd.DataFrame) -> pd.DataFrame:
         """Transform the radiation values back into their physical units"""
-        radiation[self.neutron_cols] = radiation[self.neutron_cols] * self.neutron_max
-        radiation[self.gamma_cols] = radiation[self.gamma_cols] * self.gamma_max
-        return radiation
+        out = radiation.copy()
+        out[self.neutron_cols] = out[self.neutron_cols] * self.neutron_max
+        out[self.gamma_cols] = out[self.gamma_cols] * self.gamma_max
+        return out
 
     def load_data(self, match_scaling: bool = False):
         """This loads the data from files and generates all downstream attributes of the FEData object.
@@ -125,7 +127,7 @@ class FEData:
             self.neutron_max = self.df[self.neutron_cols].max()
             self.gamma_max = self.df[self.gamma_cols].max()
 
-        self.df[self.neutron_cols + self.gamma_cols] = self.normalize_radiation(
+        self.df.loc[:, self.neutron_cols + self.gamma_cols] = self.normalize_radiation(
             self.df[self.neutron_cols+self.gamma_cols])
 
         self.df[self.gmes_cols] = self.df[self.gmes_cols] / c100_max_operational_gmes
