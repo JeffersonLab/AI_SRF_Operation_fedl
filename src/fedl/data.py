@@ -321,9 +321,9 @@ class OperationsData(FEData):
         # Track the maximum allowable beam current and filter it out when loading the data
         self.max_current = max_current
 
-    def load_data(self):
+    def load_data(self, **kwargs):
         """Load up the data and filter out examples where the beam current is too high."""
-        super().load_data()
+        super().load_data(**kwargs)
         allowable_current = self.df['IBC0R08CRCUR1'] < self.max_current
         self.df = self.df[allowable_current]
         self.X = self.X[allowable_current]
