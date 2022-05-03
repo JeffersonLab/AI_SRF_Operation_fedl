@@ -172,7 +172,7 @@ class FEData:
             energy_gain += self.df[gmes_col].values * self.ced_df[self.ced_df['EPICSName'] == epics_name].length.values
         self.df['EGAIN'] = energy_gain
 
-    def get_train_test(self, split: str = 'EGAIN', train_size: float = 0.75, batch_size: int = 256, seed: int = 732,
+    def get_train_test(self, split: Optional[str] = 'EGAIN', train_size: float = 0.75, batch_size: int = 256, seed: int = 732,
                        shuffle: bool = True, provide_df: bool = False) \
             -> Union[Tuple[DataLoader, DataLoader], Tuple[DataLoader, DataLoader, pd.DataFrame, pd.DataFrame]]:
         """Get train and test splits as pytorch DataLoaders.  Subclasses will should override this as makes sense.
@@ -191,15 +191,25 @@ class FEData:
         """
 
         df_train, df_test = None, None
-        X_train, X_test, y_train, y_test = sklearn.model_selection.train_test_split(self.X, self.y,
-                                                                                    train_size=train_size,
-                                                                                    stratify=self.df[split],
-                                                                                    random_state=seed)
+        if split is None:
+            X_train, X_test, y_train, y_test = sklearn.model_selection.train_test_split(self.X, self.y,
+                                                                                        train_size=train_size,
+                                                                                        random_state=seed)
+        else:
+            X_train, X_test, y_train, y_test = sklearn.model_selection.train_test_split(self.X, self.y,
+                                                                                        train_size=train_size,
+                                                                                        stratify=self.df[split],
+                                                                                        random_state=seed)
         if provide_df:
-            df_train, df_test = sklearn.model_selection.train_test_split(self.df,
-                                                                         train_size=train_size,
-                                                                         stratify=self.df[split],
-                                                                         random_state=seed)
+            if split is None:
+                df_train, df_test = sklearn.model_selection.train_test_split(self.df,
+                                                                             train_size=train_size,
+                                                                             random_state=seed)
+            else:
+                df_train, df_test = sklearn.model_selection.train_test_split(self.df,
+                                                                             train_size=train_size,
+                                                                             stratify=self.df[split],
+                                                                             random_state=seed)
 
         train_loader = DataLoader(NDX_RF_Dataset(X_train, y_train), batch_size=batch_size, shuffle=shuffle)
         test_loader = DataLoader(NDX_RF_Dataset(X_test, y_test), batch_size=batch_size, shuffle=shuffle)
