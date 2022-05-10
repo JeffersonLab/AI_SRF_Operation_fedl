@@ -306,15 +306,16 @@ class OperationsData(FEData):
         self.y = self.y[allowable_current]
 
 
-def split_to_train_test_files(gradient_scan_file: str, train_size: float = 0.8, group_col='settle_start') -> None:
+def split_to_train_test_files(gradient_scan_file: str, train_size: float = 0.8, group_col='settle_start',
+                              data_dir: str = 'data') -> None:
     """Method for splitting gradient scan file into train and test sets that are stored separately on the file system.
 
     Only makes the new files if they don't exist.  Nothing done if they both exist.
     """
 
-    master_file = f'data/all/{gradient_scan_file}'
-    test_file = f'data/test/{gradient_scan_file}'
-    train_file = f'data/train/{gradient_scan_file}'
+    master_file = f'{data_dir}/all/{gradient_scan_file}'
+    test_file = f'{data_dir}/test/{gradient_scan_file}'
+    train_file = f'{data_dir}/train/{gradient_scan_file}'
 
     if os.path.exists(test_file) and os.path.exists(train_file):
         return
@@ -467,6 +468,17 @@ def evaluate_model_on_trip_data(model: nn.Module, gmes_zones: List[str], rad_zon
                        set_name=set_name)
 
 
+def add_faulted_cavities_and_zones(df: pd.DataFrame) -> pd.DataFrame:
+    """"""
+    faulted_cavities = gmes_range.apply(
+        lambda x: gmes_range.columns[x > min_gradient_range].str[0:4].unique().to_list(),
+        axis=1)
+    faulted_zones = gmes_range.apply(lambda x: gmes_range.columns[x > min_gradient_range].str[0:3].unique().to_list(),
+                                     axis=1)
+    df['faulted_cavities'] = faulted_cavities.apply(lambda x: ":".join(x))
+    df['faulted_zones'] = faulted_zones.apply(lambda x: ":".join(x))
+
+
 def filter_trip_data_to_nl(input_file: str, output_file: str, min_gradient_range: float = 0.2,
                            add_fault_ids: bool = True):
     """This filters out data that does not include a trip of any north linac cavity and saves a new data file."""
@@ -482,13 +494,7 @@ def filter_trip_data_to_nl(input_file: str, output_file: str, min_gradient_range
     df = df.set_index(df.level_0)
 
     if add_fault_ids:
-        faulted_cavities = gmes_range.apply(
-            lambda x: gmes_range.columns[x > min_gradient_range].str[0:4].unique().to_list(),
-            axis=1)
-        faulted_zones = gmes_range.apply(lambda x: gmes_range.columns[x > min_gradient_range].str[0:3].unique().to_list(),
-                                         axis=1)
-        df['faulted_cavities'] = faulted_cavities.apply(lambda x: ":".join(x))
-        df['faulted_zones'] = faulted_zones.apply(lambda x: ":".join(x))
+        df = add_faulted_cavities_and_zones(df)
 
     df = df.loc[has_fault, :]
     df.to_csv(output_file, index=False)
