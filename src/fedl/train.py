@@ -12,7 +12,8 @@ from sklearn.metrics import r2_score, mean_squared_error
 
 def train(model: torch.nn.Module, train_loader: DataLoader, val_loader: DataLoader, device: torch.device,
           num_epochs: int, optimizer: torch.optim.Optimizer, criterion: torch.nn.modules.Module, save_file: str,
-          tb_log_dir: str,  lr_scheduler: Optional[optim.lr_scheduler.StepLR] = None) -> torch.nn.modules.Module:
+          tb_log_dir: str,  lr_scheduler: Optional[optim.lr_scheduler.StepLR] = None,
+          start_epoch: int = 0) -> torch.nn.modules.Module:
     """Train the given module on the given data and other parameters.
 
     Note: criterion is a standard pytorch _Loss object.
@@ -25,7 +26,7 @@ def train(model: torch.nn.Module, train_loader: DataLoader, val_loader: DataLoad
     tb = SummaryWriter(log_dir=tb_log_dir)
     num_batches = len(train_loader)
 
-    for epoch in range(num_epochs):
+    for epoch in range(start_epoch, start_epoch + num_epochs):
         print("\n")
         print("=" * 20, "Starting epoch %d" % (epoch + 1), "=" * 20)
 
