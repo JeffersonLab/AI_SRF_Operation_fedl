@@ -48,9 +48,10 @@ def plot_percent_error(df, title):
     return g
 
 
-def plot_predictions_over_time(df: pd.DataFrame, title: str = "", aspect: float = 8):
-    g = sns.FacetGrid(df[df.type.isin(['observed', 'predicted'])], row='variable', hue='type', aspect=aspect)
-    # g.map_dataframe(sns.scatterplot, x='dtime', y='value', alpha=0.2)
+def plot_predictions_over_time(df: pd.DataFrame, title: str = "", height: float = 2, aspect: float = 4,
+                               log_y: bool = False):
+    g = sns.FacetGrid(df[df.type.isin(['observed', 'predicted'])], row='variable', hue='type', height=height,
+                      aspect=aspect, sharey=False)
     g.map_dataframe(sns.lineplot, x='dtime', y='value', alpha=0.7)
     g.add_legend()
     g.set_axis_labels("Time", "rem/h")
@@ -61,8 +62,8 @@ def plot_predictions_over_time(df: pd.DataFrame, title: str = "", aspect: float 
     # noinspection PyUnusedLocal
     for (col_key), ax in g.axes_dict.items():
         ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-        # ax.xaxis.set_major_locator(mdates.MonthLocator())
-        # ax.xaxis.set_major_locator(mdates.DateLocator())
+        if log_y:
+            ax.set_yscale("log", base=10)
     plt.gcf().autofmt_xdate()
 
     plt.show()
