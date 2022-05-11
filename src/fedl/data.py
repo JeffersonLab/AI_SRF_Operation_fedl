@@ -172,8 +172,8 @@ class FEData:
             energy_gain += self.df[gmes_col].values * self.ced_df[self.ced_df['EPICSName'] == epics_name].length.values
         self.df['EGAIN'] = energy_gain
 
-    def get_train_test(self, split: Optional[str] = 'EGAIN', train_size: float = 0.75, batch_size: int = 256, seed: int = 732,
-                       shuffle: bool = True, provide_df: bool = False) \
+    def get_train_test(self, split: Optional[str] = 'EGAIN', train_size: float = 0.75, batch_size: int = 256,
+                       seed: int = 732, shuffle: bool = True, provide_df: bool = False) \
             -> Union[Tuple[DataLoader, DataLoader], Tuple[DataLoader, DataLoader, pd.DataFrame, pd.DataFrame]]:
         """Get train and test splits as pytorch DataLoaders.  Subclasses will should override this as makes sense.
 
@@ -255,9 +255,9 @@ class GradientScanData(FEData):
                          data_dir=data_dir, rad_zones=rad_zones, gmes_zones=gmes_zones, rad_suffix=rad_suffix,
                          meta_cols=['Datetime', 'sample_type', 'settle_start'], linac=linac)
 
-    def load_data(self):
+    def load_data(self, **kwargs):
         # Set settle_start to be a datetime object
-        super().load_data()
+        super().load_data(**kwargs)
         self.df['settle_start'] = pd.to_datetime(self.df['settle_start'])
 
     def get_train_test(self, split: str = 'settle', train_size: float = 0.75, batch_size: int = 256, seed: int = 732,
@@ -277,7 +277,6 @@ class GradientScanData(FEData):
         Returns:  train_dataloader, test_dataloader
         """
 
-        df_train, df_test = None, None
         if split == 'settle':
             gss = GroupShuffleSplit(train_size=train_size, random_state=seed, n_splits=2)
             train_idx, test_idx = next(gss.split(self.df, groups=self.df.settle_start))
@@ -301,7 +300,6 @@ class GradientScanData(FEData):
 
             df_train = self.df[egain_categories == 'train']
             df_test = self.df[egain_categories == 'test']
-
 
         else:
             raise RuntimeError(f"Unsupported split argument '{split}'")
