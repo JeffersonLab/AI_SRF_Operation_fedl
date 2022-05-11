@@ -48,9 +48,10 @@ def plot_percent_error(df, title):
     return g
 
 
-def plot_predictions_over_time(df, title=""):
-    g = sns.FacetGrid(df[df.type.isin(['observed', 'predicted'])], col='variable', hue='type')
-    g.map_dataframe(sns.scatterplot, x='dtime', y='value', alpha=0.2)
+def plot_predictions_over_time(df: pd.DataFrame, title: str = "", aspect: float = 8):
+    g = sns.FacetGrid(df[df.type.isin(['observed', 'predicted'])], row='variable', hue='type', aspect=aspect)
+    # g.map_dataframe(sns.scatterplot, x='dtime', y='value', alpha=0.2)
+    g.map_dataframe(sns.lineplot, x='dtime', y='value', alpha=0.7)
     g.add_legend()
     g.set_axis_labels("Time", "rem/h")
     g.fig.subplots_adjust(top=0.7)
