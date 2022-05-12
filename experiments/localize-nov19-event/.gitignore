@@ -3,3 +3,4 @@ runs/*
 *-state-dict
 temp-state-file
 out-run-*
+/Notes_baseline_trip_model_and_fe_localization.docx
