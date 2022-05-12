@@ -468,17 +468,6 @@ def evaluate_model_on_trip_data(model: nn.Module, gmes_zones: List[str], rad_zon
                        set_name=set_name)
 
 
-def add_faulted_cavities_and_zones(df: pd.DataFrame) -> pd.DataFrame:
-    """"""
-    faulted_cavities = gmes_range.apply(
-        lambda x: gmes_range.columns[x > min_gradient_range].str[0:4].unique().to_list(),
-        axis=1)
-    faulted_zones = gmes_range.apply(lambda x: gmes_range.columns[x > min_gradient_range].str[0:3].unique().to_list(),
-                                     axis=1)
-    df['faulted_cavities'] = faulted_cavities.apply(lambda x: ":".join(x))
-    df['faulted_zones'] = faulted_zones.apply(lambda x: ":".join(x))
-
-
 def filter_trip_data_to_nl(input_file: str, output_file: str, min_gradient_range: float = 0.2,
                            add_fault_ids: bool = True):
     """This filters out data that does not include a trip of any north linac cavity and saves a new data file."""
@@ -494,7 +483,13 @@ def filter_trip_data_to_nl(input_file: str, output_file: str, min_gradient_range
     df = df.set_index(df.level_0)
 
     if add_fault_ids:
-        df = add_faulted_cavities_and_zones(df)
+        faulted_cavities = gmes_range.apply(
+            lambda x: gmes_range.columns[x > min_gradient_range].str[0:4].unique().to_list(),
+            axis=1)
+        faulted_zones = gmes_range.apply(lambda x: gmes_range.columns[x > min_gradient_range].str[0:3].unique().to_list(),
+                                         axis=1)
+        df['faulted_cavities'] = faulted_cavities.apply(lambda x: ":".join(x))
+        df['faulted_zones'] = faulted_zones.apply(lambda x: ":".join(x))
 
     df = df.loc[has_fault, :]
     df.to_csv(output_file, index=False)
