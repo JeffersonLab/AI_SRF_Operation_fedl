@@ -6,6 +6,7 @@ import torch
 from sklearn.model_selection import GroupShuffleSplit
 import pandas as pd
 import numpy as np
+from sklearn.preprocessing import MinMaxScaler
 from torch import nn
 from torch.utils.data import DataLoader
 from torch.utils.data.dataset import Dataset
@@ -15,13 +16,6 @@ from . import utils
 
 c100_max_operational_gmes = 25
 
-# Radiation can be arbitrarily large, so these scaling values should be chosen as the highest likely to be seen under
-# "normal" circumstances.  Gamma is typically about 10x neutron.
-# max_gamma_rad_per_hour = 200
-# max_neutron_rad_per_hour = 20
-max_gamma_rad_per_hour = [5, 10, 10, 8, 1.5, 3]
-max_neutron_rad_per_hour = [0.2, 0.6, 1.0, 0.6, 0.1, 0.05]
-
 
 class FEData:
     """This class read data from disk and has methods for presenting data in pytorch friendly objects."""
@@ -29,7 +23,8 @@ class FEData:
     def __init__(self, filename: str, ced_file: str, onset_file: Optional[str] = None, section: str = 'train',
                  data_dir: str = "data", rad_zones: Optional[List[str]] = None,
                  gmes_zones: Optional[List[str]] = None, rad_suffix: str = '',
-                 meta_cols: Optional[List[str]] = None, linac: str = '1L') -> None:
+                 meta_cols: Optional[List[str]] = None, linac: str = '1L', scaler_x: Optional[MinMaxScaler] = None,
+                 scaler_y: Optional[MinMaxScaler] = None) -> None:
         r"""Loads the gradient scan data for the given file name and section (train vs test).
 
         Args:
@@ -70,7 +65,24 @@ class FEData:
         self.X = None
         self.y = None
         self.ced_df = None
-        # self.load_data()
+
+        # If it's None, then we will make one.  If not None, we assume that it has been fit.
+        self.scaler_x = scaler_x
+        self.scaler_y = scaler_y
+
+    def normalize_data(self, df, scaler, fit=True):
+        """Run Min-Max Scaling on the input and output data"""
+        if fit:
+            df = scaler.fit_transform(df)
+        else:
+            df = scaler.transform(df)
+
+        return df
+
+    def unnormalize_data(self, df, scaler):
+        """Run Min-Max Scaling on the input and output data"""
+        return scaler.inverse_transform(df)
+
 
     def load_data(self):
         """This loads the data from files and generates all downstream attributes of the FEData object.
@@ -95,6 +107,11 @@ class FEData:
             self.df = pd.concat((self.df, onset_df), axis=1)
             self.X_cols += onset_df.columns.to_list()
 
+        # Some rows may have NaNs, especially if we include zones that weren't under study.  Drop those rows.
+        for col in self.X_cols + self.y_cols:
+            self.df[col] = pd.to_numeric(self.df[col], errors='coerce')
+        self.df = self.df[self.df[self.X_cols + self.y_cols].notna().all(axis=1)]
+
         # Read in the CED data and keep it in memory.  This should be a small ~400x4 DataFrame
         self.ced_df = pd.read_csv(f"{self.data_dir}/{self.ced_file}", sep='\t')
 
@@ -103,12 +120,9 @@ class FEData:
 
         # Normalize the GMES data to an operational range, and radiation so that gamma and neutron are of a similar unit
         # scale.
-        self.df[self.gmes_cols] = self.df[self.gmes_cols] / c100_max_operational_gmes
-        self.df[self.neutron_cols] = self.df[self.neutron_cols] / max_neutron_rad_per_hour
-        self.df[self.gamma_cols] = self.df[self.gamma_cols] / max_gamma_rad_per_hour
 
         # Set datetime dtypes
-        self.df['Datetime'] = pd.to_datetime(self.df['Datetime'])
+        self.df['Datetime'] = pd.to_datetime(self.df['Datetime'].str.replace('_', ' '), yearfirst=True)
 
         # Set aside the X and y for inputs and labels
         self.X = self.df[self.X_cols]
@@ -145,7 +159,7 @@ class FEData:
         self.df['EGAIN'] = energy_gain
 
     def get_train_test(self, split: str = 'egain', train_size: float = 0.75, batch_size: int = 256, seed: int = 732,
-                       shuffle: bool = True, provide_df: bool = True) \
+                       shuffle: bool = True, provide_df: bool = True, scale: bool = True) \
             -> Union[Tuple[DataLoader, DataLoader], Tuple[DataLoader, DataLoader, pd.DataFrame, pd.DataFrame]]:
         """Get train and test splits as pytorch DataLoaders.  Subclasses will should override this as makes sense.
 
@@ -158,6 +172,7 @@ class FEData:
             seed: The value used to seed the data splitter's random_state
             shuffle: Should the DataLoaders reshuffle every epoch
             provide_df: Should the internal dataframe be split and returned
+            scale: Should the data sets be scaled/normalized
 
         Returns:  train_dataloader, test_dataloader
         """
@@ -176,6 +191,16 @@ class FEData:
         else:
             raise RuntimeError(f"Unsupported split argument '{split}'")
 
+        if scale:
+            # Make new scalers if needed
+            fit = self.initialize_scalers()
+
+            # Make sure to fit the data to the training set and not the test set
+            X_train = self.normalize_data(X_train, self.scaler_x, fit=fit)
+            y_train = self.normalize_data(y_train, self.scaler_y, fit=fit)
+            X_test = self.normalize_data(X_test, self.scaler_x, fit=False)
+            y_test = self.normalize_data(y_test, self.scaler_y, fit=False)
+
         train_loader = DataLoader(NDX_RF_Dataset(X_train, y_train), batch_size=batch_size, shuffle=shuffle)
         test_loader = DataLoader(NDX_RF_Dataset(X_test, y_test), batch_size=batch_size, shuffle=shuffle)
 
@@ -184,14 +209,30 @@ class FEData:
         else:
             return train_loader, test_loader
 
-    def get_data_loader(self, batch_size: int = 256, shuffle: bool = True) -> DataLoader:
+    def initialize_scalers(self) -> bool:
+        """Initialize scalers.  Return True if we had to make new ones.  False otherwise.  No fitting done."""
+        if self.scaler_x is None or self.scaler_y is None:
+            self.scaler_x = MinMaxScaler()
+            self.scaler_y = MinMaxScaler()
+            return True
+        return False
+
+    def get_data_loader(self, batch_size: int = 256, shuffle: bool = True, scale: bool = True) -> DataLoader:
         """A method for return a DataLoader object comprised of all the data in the GradientData object.
 
         Args:
             batch_size: The batch size used in the DataLoader.
             shuffle:  Should the DataLoader shuffle the data.
+            scale:  Should the data be scaled prior to use
         """
-        return DataLoader(NDX_RF_Dataset(self.X, self.y), batch_size=batch_size, shuffle=shuffle)
+        X = self.X
+        y = self.y
+        if scale:
+            fit = self.initialize_scalers()
+            X = self.normalize_data(self.X, self.scaler_x, fit=fit)
+            y = self.normalize_data(self.y, self.scaler_y, fit=fit)
+
+        return DataLoader(NDX_RF_Dataset(X, y), batch_size=batch_size, shuffle=shuffle)
 
     def filter_data(self, query: Optional[str]):
         """Down select the data to only entries matching the query string.  This only affects the X and y attributes.
@@ -225,7 +266,7 @@ class GradientScanData(FEData):
         self.df['settle_start'] = pd.to_datetime(self.df['settle_start'])
 
     def get_train_test(self, split: str = 'settle', train_size: float = 0.75, batch_size: int = 256, seed: int = 732,
-                       shuffle: bool = True, provide_df: bool = True) \
+                       shuffle: bool = True, provide_df: bool = True, scale: bool = True) \
             -> Union[Tuple[DataLoader, DataLoader], Tuple[DataLoader, DataLoader, pd.DataFrame, pd.DataFrame]]:
         """Get train and test splits as DataLoaders.
         Args:
@@ -269,6 +310,16 @@ class GradientScanData(FEData):
 
         else:
             raise RuntimeError(f"Unsupported split argument '{split}'")
+
+        if scale:
+            # Make new scalers if needed
+            fit = self.initialize_scalers()
+
+            # Make sure to fit the data to the training set and not the test set
+            X_train = self.normalize_data(X_train, self.scaler_x, fit=fit)
+            y_train = self.normalize_data(y_train, self.scaler_y, fit=fit)
+            X_test = self.normalize_data(X_test, self.scaler_x, fit=False)
+            y_test = self.normalize_data(y_test, self.scaler_y, fit=False)
 
         train_loader = DataLoader(NDX_RF_Dataset(X_train, y_train), batch_size=batch_size, shuffle=shuffle)
         test_loader = DataLoader(NDX_RF_Dataset(X_test, y_test), batch_size=batch_size, shuffle=shuffle)
@@ -397,12 +448,12 @@ def get_ndx_columns(linac: str, zones: Optional[List[str]] = None, suffix: str =
 class NDX_RF_Dataset(Dataset):
     """Custom data set for presenting GMES and NDX radiation."""
 
-    def __init__(self, gmes: pd.DataFrame, rad: pd.DataFrame) -> None:
+    def __init__(self, gmes: np.ndarray, rad: np.ndarray) -> None:
         if len(gmes) != len(rad):
             raise RuntimeError("Length of X and y do not match.")
 
-        self.X = torch.from_numpy(gmes.reset_index(drop=True).values.astype("float32"))
-        self.y = torch.from_numpy(rad.reset_index(drop=True).values.astype("float32"))
+        self.X = torch.from_numpy(gmes.astype("float32"))
+        self.y = torch.from_numpy(rad.astype("float32"))
 
     def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor]:
         gmes = self.X[index, :]
@@ -414,14 +465,8 @@ class NDX_RF_Dataset(Dataset):
         return len(self.X)
 
 
-def report_performance(y_pred: pd.DataFrame, y_true: pd.DataFrame, egain: pd.Series, dtime: pd.Series, set_name: str,
-                       unnormalize: bool = True):
+def report_performance(y_pred: pd.DataFrame, y_true: pd.DataFrame, egain: pd.Series, dtime: pd.Series, set_name: str):
     """Reports the performance of a set of predictions versus the ground truth.  gd used for"""
-    # Unnormalize the radiation
-    if unnormalize:
-        y_pred = y_pred * (max_neutron_rad_per_hour + max_gamma_rad_per_hour)
-        y_true = y_true * (max_neutron_rad_per_hour + max_gamma_rad_per_hour)
-
     r2, mse, mae = utils.score_model(y_pred=y_pred, y_test=y_true)
     utils.print_model_scores(r2=r2, mse=mse, mae=mae, set_name=set_name)
 
@@ -486,8 +531,9 @@ def filter_trip_data_to_nl(input_file: str, output_file: str, min_gradient_range
         faulted_cavities = gmes_range.apply(
             lambda x: gmes_range.columns[x > min_gradient_range].str[0:4].unique().to_list(),
             axis=1)
-        faulted_zones = gmes_range.apply(lambda x: gmes_range.columns[x > min_gradient_range].str[0:3].unique().to_list(),
-                                         axis=1)
+        faulted_zones = gmes_range.apply(
+            lambda x: gmes_range.columns[x > min_gradient_range].str[0:3].unique().to_list(),
+            axis=1)
         df['faulted_cavities'] = faulted_cavities.apply(lambda x: ":".join(x))
         df['faulted_zones'] = faulted_zones.apply(lambda x: ":".join(x))
 
