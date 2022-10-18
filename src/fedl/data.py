@@ -283,7 +283,6 @@ class GradientScanData(FEData):
         Returns:  train_dataloader, test_dataloader
         """
 
-        df_train, df_test = None, None
         if split == 'settle':
             gss = GroupShuffleSplit(train_size=train_size, random_state=seed, n_splits=2)
             train_idx, test_idx = next(gss.split(self.df, groups=self.df.settle_start))
@@ -307,7 +306,6 @@ class GradientScanData(FEData):
 
             df_train = self.df[egain_categories == 'train']
             df_test = self.df[egain_categories == 'test']
-
 
         else:
             raise RuntimeError(f"Unsupported split argument '{split}'")
