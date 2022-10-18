@@ -279,6 +279,7 @@ class GradientScanData(FEData):
             seed: The value used to seed the random_state used to split the train and test sets.
             shuffle: Should the DataLoaders reshuffle every epoch
             provide_df: Should the internal dataframe be split and returned
+            scale: Should the X/y data be scaled for normalization or standardization processes
 
         Returns:  train_dataloader, test_dataloader
         """
