@@ -70,20 +70,30 @@ class FEData:
         self.scaler_x = scaler_x
         self.scaler_y = scaler_y
 
-    @staticmethod
-    def normalize_data(df, scaler, fit=True):
-        """Run Min-Max Scaling on the input and output data"""
+    def _scale_data(self, X_train: np.ndarray, y_train: np.ndarray, X_test: Optional[np.ndarray] = None,
+                    y_test: Optional[np.ndarray] = None) \
+            -> Union[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray]]:
+        """Scale the train and testing data.  Object scalers are initialized and fit if needed.
+
+        Note: X_test and y_test are scaled the same as X_train and y_train respectively."""
+
+        # Make new scalers if needed
+        fit = self.initialize_scalers()
+
+        # Make sure to fit the data to the training set and not the test set
         if fit:
-            df = scaler.fit_transform(df)
+            X_train = self.scaler_x.fit_transform(X_train)
+            y_train = self.scaler_y.fit_transform(y_train)
         else:
-            df = scaler.transform(df)
+            X_train = self.scaler_x.transform(X_train)
+            y_train = self.scaler_y.transform(y_train)
 
-        return df
+        if X_test is not None and y_test is not None:
+            X_test = self.scaler_x.transform(X_test)
+            y_test = self.scaler_y.transform(y_test)
+            return X_train, y_train, X_test, y_test
 
-    @staticmethod
-    def unnormalize_data(df, scaler):
-        """Run Min-Max Scaling on the input and output data"""
-        return scaler.inverse_transform(df)
+        return X_train, y_train
 
     def load_data(self) -> None:
         """This loads the data from files and generates all downstream attributes of the FEData object.
@@ -193,14 +203,7 @@ class FEData:
             raise RuntimeError(f"Unsupported split argument '{split}'")
 
         if scale:
-            # Make new scalers if needed
-            fit = self.initialize_scalers()
-
-            # Make sure to fit the data to the training set and not the test set
-            X_train = self.normalize_data(X_train, self.scaler_x, fit=fit)
-            y_train = self.normalize_data(y_train, self.scaler_y, fit=fit)
-            X_test = self.normalize_data(X_test, self.scaler_x, fit=False)
-            y_test = self.normalize_data(y_test, self.scaler_y, fit=False)
+            X_train, y_train, X_test, y_test = self._scale_data(X_train, y_train, X_test, y_test)
 
         train_loader = DataLoader(NDX_RF_Dataset(X_train, y_train), batch_size=batch_size, shuffle=shuffle)
         test_loader = DataLoader(NDX_RF_Dataset(X_test, y_test), batch_size=batch_size, shuffle=shuffle)
@@ -229,9 +232,7 @@ class FEData:
         X = self.X
         y = self.y
         if scale:
-            fit = self.initialize_scalers()
-            X = self.normalize_data(self.X, self.scaler_x, fit=fit)
-            y = self.normalize_data(self.y, self.scaler_y, fit=fit)
+            X, y = self._scale_data(X, y)
 
         return DataLoader(NDX_RF_Dataset(X, y), batch_size=batch_size, shuffle=shuffle)
 
@@ -312,14 +313,7 @@ class GradientScanData(FEData):
             raise RuntimeError(f"Unsupported split argument '{split}'")
 
         if scale:
-            # Make new scalers if needed
-            fit = self.initialize_scalers()
-
-            # Make sure to fit the data to the training set and not the test set
-            X_train = self.normalize_data(X_train, self.scaler_x, fit=fit)
-            y_train = self.normalize_data(y_train, self.scaler_y, fit=fit)
-            X_test = self.normalize_data(X_test, self.scaler_x, fit=False)
-            y_test = self.normalize_data(y_test, self.scaler_y, fit=False)
+            X_train, y_train, X_test, y_test = self._scale_data(X_train, y_train, X_test, y_test)
 
         train_loader = DataLoader(NDX_RF_Dataset(X_train, y_train), batch_size=batch_size, shuffle=shuffle)
         test_loader = DataLoader(NDX_RF_Dataset(X_test, y_test), batch_size=batch_size, shuffle=shuffle)
