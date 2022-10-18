@@ -129,11 +129,11 @@ def plot_diagonal(*args, **kwargs):
     plt.plot(x, y, color='k')
 
 
-def show_pred_vs_obs_plot(df, title):
+def show_pred_vs_obs_plot(df, title, alpha=0.25):
     plt.figure(figsize=(10, 10))
 
     g = sns.FacetGrid(data=df, col='variable', hue='variable', aspect=1, height=3, sharex=False, sharey=False)
-    g.map_dataframe(sns.scatterplot, x='observed', y='predicted', alpha=0.05)
+    g.map_dataframe(sns.scatterplot, x='observed', y='predicted', alpha=alpha)
     g.map(plot_diagonal)
     g.set_axis_labels("Observed (rem/h)", "Predicted (rem/h)")
     for col_key, ax in g.axes_dict.items():
