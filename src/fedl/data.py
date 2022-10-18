@@ -70,7 +70,8 @@ class FEData:
         self.scaler_x = scaler_x
         self.scaler_y = scaler_y
 
-    def normalize_data(self, df, scaler, fit=True):
+    @staticmethod
+    def normalize_data(df, scaler, fit=True):
         """Run Min-Max Scaling on the input and output data"""
         if fit:
             df = scaler.fit_transform(df)
@@ -79,12 +80,12 @@ class FEData:
 
         return df
 
-    def unnormalize_data(self, df, scaler):
+    @staticmethod
+    def unnormalize_data(df, scaler):
         """Run Min-Max Scaling on the input and output data"""
         return scaler.inverse_transform(df)
 
-
-    def load_data(self):
+    def load_data(self) -> None:
         """This loads the data from files and generates all downstream attributes of the FEData object.
 
         This can and should be overridden for subclasses.  This method
