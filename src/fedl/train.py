@@ -12,7 +12,8 @@ from sklearn.metrics import r2_score, mean_squared_error
 
 def train(model: torch.nn.Module, train_loader: DataLoader, val_loader: DataLoader, device: torch.device,
           num_epochs: int, optimizer: torch.optim.Optimizer, criterion: torch.nn.modules.Module, save_file: str,
-          tb_log_dir: str,  lr_scheduler: Optional[optim.lr_scheduler.StepLR] = None) -> torch.nn.modules.Module:
+          tb_log_dir: str, lr_scheduler: Optional[optim.lr_scheduler.StepLR] = None,
+          start_epoch: int = 0) -> torch.nn.modules.Module:
     """Train the given module on the given data and other parameters.
 
     Note: criterion is a standard pytorch _Loss object.
@@ -25,7 +26,8 @@ def train(model: torch.nn.Module, train_loader: DataLoader, val_loader: DataLoad
     tb = SummaryWriter(log_dir=tb_log_dir)
     num_batches = len(train_loader)
 
-    for epoch in range(num_epochs):
+    best_model_epoch = None
+    for epoch in range(start_epoch, start_epoch + num_epochs):
         print("\n")
         print("=" * 20, "Starting epoch %d" % (epoch + 1), "=" * 20)
 
@@ -43,10 +45,6 @@ def train(model: torch.nn.Module, train_loader: DataLoader, val_loader: DataLoad
             if batch_idx % math.ceil(num_batches / 10.) == 0:
                 print(f"Batch {batch_idx}/{len(train_loader)}, Loss={loss.item():.4f}")
 
-        # Step the learning rate scheduler along
-        if lr_scheduler is not None:
-            lr_scheduler.step()
-
         for name, weight in model.named_parameters():
             tb.add_histogram(name, weight, epoch)
             tb.add_histogram(f"{name}.grad", weight.grad, epoch)
@@ -59,6 +57,17 @@ def train(model: torch.nn.Module, train_loader: DataLoader, val_loader: DataLoad
         output = evaluate_model(model, val_loader, device, criterion, multioutput=True)
         val_loss, val_r2, val_mmse, val_mr2 = output['loss'], output['r2'], output['multi_mse'], output['multi_r2']
 
+        learn_rate = optimizer.param_groups[0]['lr']
+
+        # Step the learning rate scheduler along
+        if lr_scheduler is not None:
+            if type(lr_scheduler).__name__ == "ReduceLROnPlateau":
+                learn_rate = optimizer.param_groups[0]['lr']
+                lr_scheduler.step(val_loss)
+            else:
+                learn_rate = lr_scheduler.get_last_lr()[0]
+                lr_scheduler.step()
+
         # Track all of these metrics in tensorboard.
         loss_scalars = {'Train_Loss': train2_loss, 'Val Loss': val_loss}
         r2_scalars = {'Train R2': train2_r2, 'Val R2': val_r2}
@@ -68,18 +77,21 @@ def train(model: torch.nn.Module, train_loader: DataLoader, val_loader: DataLoad
         tb.add_scalars("Val_Individual_R2", val_mr2, epoch)
         tb.add_scalars("Train_Individual_MSE", train_mmse, epoch)
         tb.add_scalars("Val_Individual_MSE", val_mmse, epoch)
+        tb.add_scalar("LR", learn_rate, epoch)
 
         # Print out some metrics as we go
-        print(f"Train / Val Loss = {train2_loss:.2f} / {val_loss:.2f}")
-        print(f"Train / Val R2 = {train2_r2:.2f} / {val_r2:.2f}")
+        print(f"lr = {learn_rate}")
+        print(f"Train / Val Loss = {train2_loss:.4f} / {val_loss:.4f}")
+        print(f"Train / Val R2 = {train2_r2:.4f} / {val_r2:.4f}")
 
         # Update the save file every time we get a better model
         if val_r2 > best_val_r2:
             best_val_r2 = val_r2
             torch.save(model.state_dict(), save_file)
+            best_model_epoch = epoch
             print("Next best model!  Updating save file.")
 
-    print(f"\n\nLoading up best weights into model. {save_file}")
+    print(f"\n\nLoading up best weights into model.  Best epoch={best_model_epoch}. {save_file}")
     model.load_state_dict(torch.load(save_file))
 
     return model
