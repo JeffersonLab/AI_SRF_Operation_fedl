@@ -1,3 +1,4 @@
+import mlflow
 import torch
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 from typing import List, Union
@@ -29,7 +30,7 @@ def print_model_scores(r2: Union[float, List[float]], mse: Union[float, List[flo
     print(f"Avg. {set_name} MAE: {mae}")
 
 
-def plot_percent_error(df, title):
+def plot_percent_error(df, title, show=False):
     plt.figure(figsize=(10, 10))
 
     g = sns.FacetGrid(data=df.loc[df.type == '%error', :], col='variable', aspect=1.5, height=1.5)
@@ -41,11 +42,13 @@ def plot_percent_error(df, title):
 
     g.fig.subplots_adjust(top=0.7)
     g.fig.suptitle(title)
-    plt.show()
+    mlflow.log_figure(g.fig, artifact_file=f"{title}.png".replace(" ", "_"))
+    if show:
+        plt.show()
     return g
 
 
-def plot_predictions_over_time(df, title=""):
+def plot_predictions_over_time(df, title="", show=False):
     g = sns.FacetGrid(df[df.type.isin(['observed', 'predicted'])], col='variable', hue='type')
     g.map_dataframe(sns.scatterplot, x='dtime', y='value', alpha=0.2)
     g.add_legend()
@@ -61,7 +64,10 @@ def plot_predictions_over_time(df, title=""):
         # ax.xaxis.set_major_locator(mdates.DateLocator())
     plt.gcf().autofmt_xdate()
 
-    plt.show()
+    mlflow.log_figure(g.fig, artifact_file=f"{title}.png".replace(" ", "_"))
+
+    if show:
+        plt.show()
 
     return g
 
@@ -129,7 +135,7 @@ def plot_diagonal(*args, **kwargs):
     plt.plot(x, y, color='k')
 
 
-def show_pred_vs_obs_plot(df, title, alpha=0.25):
+def show_pred_vs_obs_plot(df, title, alpha=0.25, show=False):
     plt.figure(figsize=(10, 10))
 
     g = sns.FacetGrid(data=df, col='variable', hue='variable', aspect=1, height=3, sharex=False, sharey=False)
@@ -142,11 +148,13 @@ def show_pred_vs_obs_plot(df, title, alpha=0.25):
 
     g.fig.subplots_adjust(top=0.9)
     g.fig.suptitle(title)
-    plt.show()
+    mlflow.log_figure(g.fig, artifact_file=f"{title}.png".replace(" ", "_"))
+    if show:
+        plt.show()
     return g
 
 
-def show_sensor_plot(df: pd.DataFrame, title):
+def show_sensor_plot(df: pd.DataFrame, title, show=False):
     plt.figure(figsize=(10, 10))
 
     g = sns.FacetGrid(data=df[df.type != '%error'], col='variable', row='type', hue='type', aspect=1.5, height=1.5)
@@ -158,18 +166,22 @@ def show_sensor_plot(df: pd.DataFrame, title):
 
     g.fig.subplots_adjust(top=0.9)
     g.fig.suptitle(title)
-    plt.show()
+    mlflow.log_figure(g.fig, artifact_file=f"{title}.png".replace(" ", "_"))
+    if show:
+        plt.show()
     return g
 
 
 def plot_data(g_df: pd.DataFrame, n_df: pd.DataFrame, g_diag_df: pd.DataFrame, n_diag_df: pd.DataFrame,
-              title: str = "") -> None:
-    show_sensor_plot(g_df, f'Gamma {title}')
-    show_sensor_plot(n_df, f'Neutron {title}')
-    show_pred_vs_obs_plot(g_diag_df, f'Gamma Obs. Vs. Pred {title}')
-    show_pred_vs_obs_plot(n_diag_df, f'Neutron Obs. Vs. Pred {title}')
-    plot_percent_error(g_df, f'gamma %Err {title}')
-    plot_percent_error(n_df, f'neutron %Err {title}')
+              title: str = "", show=False) -> None:
+    show_sensor_plot(g_df, f'Gamma {title}', show=show)
+    show_sensor_plot(n_df, f'Neutron {title}', show=show)
+    show_pred_vs_obs_plot(g_diag_df, f'Gamma Obs. Vs. Pred {title}', show=show)
+    show_pred_vs_obs_plot(n_diag_df, f'Neutron Obs. Vs. Pred {title}', show=show)
+    plot_percent_error(g_df, f'gamma %Err {title}', show=show)
+    plot_percent_error(n_df, f'neutron %Err {title}', show=show)
+    plot_predictions_over_time(g_df, title=f'Gamma Obs and Pred Over Time {title}', show=show)
+    plot_predictions_over_time(n_df, title=f'Neutron Obs and Pred Over Time {title}', show=show)
 
 
 def plot_results(df, title):

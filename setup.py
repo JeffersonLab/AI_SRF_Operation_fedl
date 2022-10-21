@@ -41,6 +41,7 @@ setup(
         'seaborn>=0.11.2',
         'scikit-learn>=1.0.2',
         'torch>=1.11.0',
-        "tensorboard>=2.8.0"
+        "tensorboard>=2.8.0",
+        "mlflow>=1.29.0"
     ]
 )

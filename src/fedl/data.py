@@ -459,7 +459,8 @@ class NDX_RF_Dataset(Dataset):
         return len(self.X)
 
 
-def report_performance(y_pred: pd.DataFrame, y_true: pd.DataFrame, egain: pd.Series, dtime: pd.Series, set_name: str):
+def report_performance(y_pred: pd.DataFrame, y_true: pd.DataFrame, egain: pd.Series, dtime: pd.Series, set_name: str,
+                       show: bool):
     """Reports the performance of a set of predictions versus the ground truth.  gd used for"""
     r2, mse, mae = utils.score_model(y_pred=y_pred, y_test=y_true)
     utils.print_model_scores(r2=r2, mse=mse, mae=mae, set_name=set_name)
@@ -471,7 +472,7 @@ def report_performance(y_pred: pd.DataFrame, y_true: pd.DataFrame, egain: pd.Ser
 
     g_df, n_df, g_diag_df, n_diag_df = utils.get_sensor_plot_data(y_true=y_true, y_pred=y_pred, egain=egain,
                                                                   dtime=dtime)
-    utils.plot_data(g_df=g_df, n_df=n_df, g_diag_df=g_diag_df, n_diag_df=n_diag_df, title=set_name)
+    utils.plot_data(g_df=g_df, n_df=n_df, g_diag_df=g_diag_df, n_diag_df=n_diag_df, title=set_name, show=show)
 
 
 def eval_model_on_nov5_data(model, gmes_zones, rad_zones):

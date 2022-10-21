@@ -2,6 +2,8 @@ from typing import Optional
 
 from datetime import datetime
 import math
+from . import data
+import mlflow
 import pandas as pd
 import torch
 from torch import optim
@@ -13,7 +15,7 @@ from sklearn.metrics import r2_score, mean_squared_error
 def train(model: torch.nn.Module, train_loader: DataLoader, val_loader: DataLoader, device: torch.device,
           num_epochs: int, optimizer: torch.optim.Optimizer, criterion: torch.nn.modules.Module, save_file: str,
           tb_log_dir: str, lr_scheduler: Optional[optim.lr_scheduler.StepLR] = None,
-          start_epoch: int = 0) -> torch.nn.modules.Module:
+          start_epoch: int = 0, params: Optional = None) -> torch.nn.modules.Module:
     """Train the given module on the given data and other parameters.
 
     Note: criterion is a standard pytorch _Loss object.
@@ -45,21 +47,8 @@ def train(model: torch.nn.Module, train_loader: DataLoader, val_loader: DataLoad
             if batch_idx % math.ceil(num_batches / 10.) == 0:
                 print(f"Batch {batch_idx}/{len(train_loader)}, Loss={loss.item():.4f}")
 
-        for name, weight in model.named_parameters():
-            tb.add_histogram(name, weight, epoch)
-            tb.add_histogram(f"{name}.grad", weight.grad, epoch)
-
-        # If I don't do this after the epoch, then validation loss is consistently lower than train loss.
-        output = evaluate_model(model, train_loader, device, criterion, multioutput=True)
-        train2_loss, train2_r2, train_mmse, train_mr2 = output['loss'], output['r2'], output['multi_mse'], output[
-            'multi_r2']
-
-        output = evaluate_model(model, val_loader, device, criterion, multioutput=True)
-        val_loss, val_r2, val_mmse, val_mr2 = output['loss'], output['r2'], output['multi_mse'], output['multi_r2']
-
-        learn_rate = optimizer.param_groups[0]['lr']
-
         # Step the learning rate scheduler along
+        learn_rate = optimizer.param_groups[0]['lr']
         if lr_scheduler is not None:
             if type(lr_scheduler).__name__ == "ReduceLROnPlateau":
                 learn_rate = optimizer.param_groups[0]['lr']
@@ -68,16 +57,17 @@ def train(model: torch.nn.Module, train_loader: DataLoader, val_loader: DataLoad
                 learn_rate = lr_scheduler.get_last_lr()[0]
                 lr_scheduler.step()
 
-        # Track all of these metrics in tensorboard.
-        loss_scalars = {'Train_Loss': train2_loss, 'Val Loss': val_loss}
-        r2_scalars = {'Train R2': train2_r2, 'Val R2': val_r2}
-        tb.add_scalars("Loss", loss_scalars, epoch)
-        tb.add_scalars("R2", r2_scalars, epoch)
-        tb.add_scalars("Train_Individual_R2", train_mr2, epoch)
-        tb.add_scalars("Val_Individual_R2", val_mr2, epoch)
-        tb.add_scalars("Train_Individual_MSE", train_mmse, epoch)
-        tb.add_scalars("Val_Individual_MSE", val_mmse, epoch)
-        tb.add_scalar("LR", learn_rate, epoch)
+        if params is not None and epoch % params.log_interval == 0:
+            # If I don't do this after the epoch, then validation loss is consistently lower than train loss.
+            output = evaluate_model(model, train_loader, device, criterion, multioutput=True)
+            train2_loss, train2_r2, train_mmse, train_mr2 = output['loss'], output['r2'], output['multi_mse'], output[
+                'multi_r2']
+
+            output = evaluate_model(model, val_loader, device, criterion, multioutput=True)
+            val_loss, val_r2, val_mmse, val_mr2 = output['loss'], output['r2'], output['multi_mse'], output['multi_r2']
+
+            log_metrics(model, tb, epoch, train2_loss, val_loss, train2_r2, val_r2, train_mr2, val_mr2, train_mmse,
+                        val_mmse, learn_rate, params)
 
         # Print out some metrics as we go
         print(f"lr = {learn_rate}")
@@ -95,6 +85,52 @@ def train(model: torch.nn.Module, train_loader: DataLoader, val_loader: DataLoad
     model.load_state_dict(torch.load(save_file))
 
     return model
+
+
+def log_metrics(model, tb, epoch, train_loss, val_loss, train_r2, val_r2, train_mr2, val_mr2, train_mmse, val_mmse,
+                learn_rate, params) -> None:
+
+    for name, weight in model.named_parameters():
+        tb.add_histogram(name, weight, epoch)
+        tb.add_histogram(f"{name}.grad", weight.grad, epoch)
+
+    loss_scalars = {'Train Loss': train_loss, 'Val Loss': val_loss}
+    r2_scalars = {'Train R2': train_r2, 'Val R2': val_r2}
+
+    # Track metrics in tensorboard.
+    tb.add_scalars("Loss", loss_scalars, epoch)
+    tb.add_scalars("R2", r2_scalars, epoch)
+    tb.add_scalar("Learning Rate", learn_rate, epoch)
+
+    # Track metrics in MLFlow
+    mlflow.log_metrics(loss_scalars, epoch)
+    mlflow.log_metrics(r2_scalars, epoch)
+    mlflow.log_metric("Learning Rate", learn_rate, epoch)
+
+    # Try to put better names to individual output metrics if possible.  Then log them to MLflow and tensorboard.
+    names = [f"out-{i}" for i in train_mr2.keys()]
+    ndx_names = names
+    if params is not None:
+        ndx_names = data.get_ndx_columns(params.linac, params.radiation_zones)
+
+    t_mr2 = {}
+    v_mr2 = {}
+    t_mmse = {}
+    v_mmse = {}
+    for name in train_mr2.keys():
+        t_mr2[f"Train R2 {ndx_names[int(name)]}"] = train_mr2[name]
+        v_mr2[f"Val R2 {ndx_names[int(name)]}"] = val_mr2[name]
+        t_mmse[f"Train MSE {ndx_names[int(name)]}"] = train_mmse[name]
+        v_mmse[f"Val MSE {ndx_names[int(name)]}"] = val_mmse[name]
+
+    tb.add_scalars("Train Individual R2", t_mr2, epoch)
+    tb.add_scalars("Val Individual R2", v_mr2, epoch)
+    tb.add_scalars("Train Individual MSE", t_mmse, epoch)
+    tb.add_scalars("Val Individual MSE", v_mmse, epoch)
+    mlflow.log_metrics(t_mr2, epoch)
+    mlflow.log_metrics(v_mr2, epoch)
+    mlflow.log_metrics(t_mmse, epoch)
+    mlflow.log_metrics(v_mmse, epoch)
 
 
 def evaluate_model(model, dataloader, device, criterion, eval_mode=True, multioutput: bool = True):
