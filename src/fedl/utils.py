@@ -1,4 +1,9 @@
+import io
+
 import mlflow
+import numpy as np
+import onnx
+import onnxruntime
 import torch
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 from typing import List, Union
@@ -250,3 +255,28 @@ def make_predictions(model: nn.Module, data_loader: DataLoader, device, y_cols: 
     y_pred = pd.DataFrame(torch.concat(pred_list).cpu().numpy(), columns=y_cols)
 
     return y_pred
+
+def convert_to_onnx(model, x, input_names, output_names):
+    """Convert a model to ONNX format.
+    Args:
+        model: A pytorch model
+        x: An input to model.  requires_grad should be trun for this
+        input_name: The name of the input to the model
+
+    """
+    torch_out = model(x)
+    onnx_model_save = io.BytesIO()
+    torch.onnx.export(model, x, onnx_model_save, export_params=True, do_constant_folding=True, input_names=input_names,
+                      output_names=output_names, dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}})
+
+    # Check that the model is well-formed
+    onnx_model = onnx.load_model_from_string(onnx_model_save.getvalue())
+    onnx.checker.check_model(onnx_model)
+
+    # Check that the ONNX model makes the same prediction as the pytorch model
+    ort_session = onnxruntime.InferenceSession(onnx_model_save.getvalue())
+    ort_inputs = {ort_session.get_inputs()[0].name: x.detach().cpu().numpy()}
+    ort_outs = ort_session.run(None, ort_inputs)
+    np.testing.assert_allclose(torch_out.detach().cpu().numpy(), ort_outs[0], rtol=1e-03, atol=1e-05)
+
+    return onnx_model
