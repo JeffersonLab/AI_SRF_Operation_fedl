@@ -6,7 +6,7 @@ import onnx
 import onnxruntime
 import torch
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
-from typing import List, Union
+from typing import List, Union, Tuple
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -19,7 +19,7 @@ pd.set_option('display.max_columns', None)
 pd.set_option('display.width', 1000)
 
 
-def score_model(y_pred, y_test, multioutput='raw_values'):
+def score_model(y_pred: pd.DataFrame, y_test: pd.DataFrame, multioutput='raw_values') -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     r2 = r2_score(y_test, y_pred, multioutput=multioutput)
     mse = mean_squared_error(y_test, y_pred, multioutput=multioutput)
     mae = mean_absolute_error(y_test, y_pred, multioutput=multioutput)
