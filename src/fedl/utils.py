@@ -19,7 +19,8 @@ pd.set_option('display.max_columns', None)
 pd.set_option('display.width', 1000)
 
 
-def score_model(y_pred: pd.DataFrame, y_test: pd.DataFrame, multioutput='raw_values') -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def score_model(y_pred: pd.DataFrame, y_test: pd.DataFrame, multioutput='raw_values') -> Union[
+    Tuple[np.ndarray, np.ndarray, np.ndarray], Tuple[float, float, float]]:
     r2 = r2_score(y_test, y_pred, multioutput=multioutput)
     mse = mean_squared_error(y_test, y_pred, multioutput=multioutput)
     mae = mean_absolute_error(y_test, y_pred, multioutput=multioutput)
@@ -86,8 +87,7 @@ def get_sensor_plot_data(y_true: pd.DataFrame, y_pred: pd.DataFrame, dtime, egai
     y_err = y_pred - y_true
     y_err_perc = 100 * (y_pred - y_true) / y_true
 
-
-# Generate the different DataFrames that will then be combined and melted
+    # Generate the different DataFrames that will then be combined and melted
     # Observed data
     y_true['type'] = ['observed'] * len(y_true)
     y_true['dtime'] = dtime
