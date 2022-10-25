@@ -2,6 +2,9 @@ from typing import Optional
 
 from datetime import datetime
 import math
+
+import numpy as np
+
 from . import data
 import mlflow
 import pandas as pd
@@ -15,7 +18,7 @@ from sklearn.metrics import r2_score, mean_squared_error
 def train(model: torch.nn.Module, train_loader: DataLoader, val_loader: DataLoader, device: torch.device,
           num_epochs: int, optimizer: torch.optim.Optimizer, criterion: torch.nn.modules.Module, save_file: str,
           tb_log_dir: str, lr_scheduler: Optional[optim.lr_scheduler.StepLR] = None,
-          start_epoch: int = 0, params: Optional = None) -> torch.nn.modules.Module:
+          start_epoch: int = 0, params: Optional = None, show=True) -> torch.nn.modules.Module:
     """Train the given module on the given data and other parameters.
 
     Note: criterion is a standard pytorch _Loss object.
@@ -24,14 +27,15 @@ def train(model: torch.nn.Module, train_loader: DataLoader, val_loader: DataLoad
     if save_file is None:
         save_file = f"{model.__class__.__name__}.{datetime.now().strftime('%Y-%m-%d_%H%M%S')}-state-dict"
 
-    print(f"in train(): device = {device}")
     tb = SummaryWriter(log_dir=tb_log_dir)
     num_batches = len(train_loader)
 
     best_model_epoch = None
     for epoch in range(start_epoch, start_epoch + num_epochs):
-        print("\n")
-        print("=" * 20, "Starting epoch %d" % (epoch + 1), "=" * 20)
+        train_loss = []
+        if show:
+            print("\n")
+            print("=" * 20, "Starting epoch %d" % (epoch + 1), "=" * 20)
 
         model.train()  # This will cause models with dropout, etc., layers to be activated during training
 
@@ -44,9 +48,11 @@ def train(model: torch.nn.Module, train_loader: DataLoader, val_loader: DataLoad
             loss.backward()
             optimizer.step()
 
-            if batch_idx % math.ceil(num_batches / 10.) == 0:
+            train_loss.append(loss.item())
+            if batch_idx % math.ceil(num_batches / 10.) == 0 and show:
                 print(f"Batch {batch_idx}/{len(train_loader)}, Loss={loss.item():.4f}")
 
+        train_loss = np.mean(train_loss)
         # Step the learning rate scheduler along
         learn_rate = optimizer.param_groups[0]['lr']
         if lr_scheduler is not None:
@@ -68,20 +74,26 @@ def train(model: torch.nn.Module, train_loader: DataLoader, val_loader: DataLoad
 
             log_metrics(model, tb, epoch, train2_loss, val_loss, train2_r2, val_r2, train_mr2, val_mr2, train_mmse,
                         val_mmse, learn_rate, params)
+        else:
+            # Log the simple train loss metrics
+            mlflow.log_metric("Train Loss", train_loss)
 
         # Print out some metrics as we go
-        print(f"lr = {learn_rate}")
-        print(f"Train / Val Loss = {train2_loss:.4f} / {val_loss:.4f}")
-        print(f"Train / Val R2 = {train2_r2:.4f} / {val_r2:.4f}")
+        if show:
+            print(f"lr = {learn_rate}")
+            print(f"Train / Val Loss = {train2_loss:.4f} / {val_loss:.4f}")
+            print(f"Train / Val R2 = {train2_r2:.4f} / {val_r2:.4f}")
 
         # Update the save file every time we get a better model
         if val_r2 > best_val_r2:
             best_val_r2 = val_r2
             torch.save(model.state_dict(), save_file)
             best_model_epoch = epoch
-            print("Next best model!  Updating save file.")
+            if show:
+                print("Next best model!  Updating save file.")
 
-    print(f"\n\nLoading up best weights into model.  Best epoch={best_model_epoch}. {save_file}")
+    if show:
+        print(f"\n\nLoading up best weights into model.  Best epoch={best_model_epoch}. {save_file}")
     model.load_state_dict(torch.load(save_file))
 
     return model

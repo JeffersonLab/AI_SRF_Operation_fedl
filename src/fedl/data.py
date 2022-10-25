@@ -1,6 +1,7 @@
 import os
 from typing import Optional, Tuple, List, Union
 
+import mlflow
 import sklearn.model_selection
 import torch
 from sklearn.model_selection import GroupShuffleSplit
@@ -460,15 +461,31 @@ class NDX_RF_Dataset(Dataset):
 
 
 def report_performance(y_pred: pd.DataFrame, y_true: pd.DataFrame, egain: pd.Series, dtime: pd.Series, set_name: str,
-                       show: bool):
-    """Reports the performance of a set of predictions versus the ground truth.  gd used for"""
+                       show: bool, metric_prefix: str):
+    """Reports the performance of a set of predictions versus the ground truth."""
     r2, mse, mae = utils.score_model(y_pred=y_pred, y_test=y_true)
-    utils.print_model_scores(r2=r2, mse=mse, mae=mae, set_name=set_name)
+    for idx in range(len(y_pred.columns)):
+        col = y_pred.columns[idx]
+        name = col
+        if name.startswith("INX"):
+            name = name[3:]
+        if name.endswith("DsRt_lag-1"):
+            name = name[:-10]
+        if name.endswith("DsRt"):
+            name = name[:-4]
 
-    print()
+        mlflow.log_metric(f"{metric_prefix}-R2-{name}", r2[idx])
+        mlflow.log_metric(f"{metric_prefix}-MSE-{name}", mse[idx])
+        mlflow.log_metric(f"{metric_prefix}-MAE-{name}", mae[idx])
+    if show:
+        utils.print_model_scores(r2=r2, mse=mse, mae=mae, set_name=set_name)
+
     r2, mse, mae = utils.score_model(y_pred=y_pred, y_test=y_true, multioutput='uniform_average')
-    print(set_name)
-    utils.print_model_scores(r2=r2, mse=mse, mae=mae, set_name="")
+    mlflow.log_metrics({f"{metric_prefix}-R2-final": r2, f"{metric_prefix}-MSE-final": mse, f"{metric_prefix}-MAE-final": mae})
+    if show:
+        print()
+        print(set_name)
+        utils.print_model_scores(r2=r2, mse=mse, mae=mae, set_name="")
 
     g_df, n_df, g_diag_df, n_diag_df = utils.get_sensor_plot_data(y_true=y_true, y_pred=y_pred, egain=egain,
                                                                   dtime=dtime)
